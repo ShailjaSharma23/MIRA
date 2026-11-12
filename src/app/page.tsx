@@ -157,6 +157,11 @@ export default function Home() {
       createdAt: Date.now(),
     };
 
+    // Retrieve fresh conversation messages to guarantee full multi-turn memory
+    const targetConv = conversations.find((c) => c.id === currentChatId);
+    const existingMessages = targetConv ? targetConv.messages : [];
+    const fullConversation = [...existingMessages, userMessage];
+
     // Update conversation with user message
     setConversations((prev) =>
       prev.map((conv) => {
@@ -165,7 +170,7 @@ export default function Home() {
           return {
             ...conv,
             title: isFirstMessage ? content.slice(0, 32) : conv.title,
-            messages: [...conv.messages, userMessage],
+            messages: fullConversation,
             updatedAt: Date.now(),
           };
         }
@@ -185,7 +190,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         signal: abortControllerRef.current.signal,
         body: JSON.stringify({
-          messages: [...messages, userMessage],
+          messages: fullConversation,
           activePlugins: activePluginIds,
           model: selectedModel.id,
           webSearchEnabled,
