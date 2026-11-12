@@ -34,23 +34,63 @@ export default function Home() {
     isLoggedIn: true,
   });
 
-  // Load conversations from localStorage
-  useEffect(() => {
+  const syncConversationToDb = async (conv: Conversation) => {
+    if (!user.isLoggedIn || !user.id) return;
     try {
-      const saved = localStorage.getItem("mira_conversations");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        setConversations(parsed);
-        if (parsed.length > 0) {
-          setActiveId(parsed[0].id);
+      await fetch("/api/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: conv.id,
+          userId: user.id,
+          title: conv.title,
+          messages: conv.messages,
+          activePlugins: conv.activePlugins || [],
+          pinned: conv.pinned || false,
+        }),
+      });
+    } catch (e) {
+      console.warn("Background cloud sync skipped:", e);
+    }
+  };
+
+  // Load conversations from cloud / localStorage
+  useEffect(() => {
+    async function loadData() {
+      if (user.isLoggedIn && user.id) {
+        try {
+          const res = await fetch(`/api/history?userId=${user.id}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.conversations && data.conversations.length > 0) {
+              setConversations(data.conversations);
+              setActiveId(data.conversations[0].id);
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to fetch cloud history, falling back to local storage:", e);
         }
-      } else {
+      }
+
+      try {
+        const saved = localStorage.getItem("mira_conversations");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          setConversations(parsed);
+          if (parsed.length > 0) {
+            setActiveId(parsed[0].id);
+          }
+        } else {
+          createNewChat();
+        }
+      } catch {
         createNewChat();
       }
-    } catch {
-      createNewChat();
     }
-  }, []);
+
+    loadData();
+  }, [user.id]);
 
   // Save conversations to localStorage
   useEffect(() => {
@@ -87,6 +127,10 @@ export default function Home() {
       }
       return filtered;
     });
+
+    if (user.isLoggedIn && user.id) {
+      fetch(`/api/history?id=${id}&userId=${user.id}`, { method: "DELETE" }).catch(() => {});
+    }
   };
 
   const handleSendMessage = async (content: string) => {
@@ -167,11 +211,13 @@ export default function Home() {
       setConversations((prev) =>
         prev.map((conv) => {
           if (conv.id === currentChatId) {
-            return {
+            const updated = {
               ...conv,
               messages: [...conv.messages, assistantMessage],
               updatedAt: Date.now(),
             };
+            syncConversationToDb(updated);
+            return updated;
           }
           return conv;
         })
