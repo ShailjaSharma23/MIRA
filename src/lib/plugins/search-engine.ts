@@ -33,7 +33,7 @@ export async function searchInternet(query: string): Promise<SearchResult> {
           sourceName: new URL(res.url).hostname.replace("www.", ""),
         }));
 
-        const synthesizedContext = data.answer || (citations.map(c => `[${c.id}] ${c.title}: ${c.snippet}`).join("\n\n"));
+        const synthesizedContext = data.answer || (data.results?.[0]?.content ? `${data.results[0].content}` : "");
         return { query, citations, synthesizedContext };
       }
     } catch (e) {

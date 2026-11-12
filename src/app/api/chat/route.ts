@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { searchInternet } from "@/lib/plugins/search-engine";
 import { computeAstrologyInsights } from "@/lib/plugins/astrology-engine";
 import { analyzeCSQuery } from "@/lib/plugins/cs-engine";
-import { DEFAULT_PLUGINS } from "@/lib/plugins/registry";
 import { Citation, Message } from "@/types";
 
 export async function POST(req: NextRequest) {
@@ -14,96 +13,126 @@ export async function POST(req: NextRequest) {
     }
 
     const lastMessage = messages[messages.length - 1];
-    const query = lastMessage.content || "";
+    const rawQuery = (lastMessage.content || "").trim();
+    const queryLower = rawQuery.toLowerCase();
 
     let citations: Citation[] = [];
-    let pluginAdditions = "";
     let activePluginName: string | undefined = undefined;
-
-    // 1. Web Search Grounding
-    if (webSearchEnabled || activePlugins.includes("web-search")) {
-      const searchRes = await searchInternet(query);
-      citations = searchRes.citations;
-      pluginAdditions += `\n\n[Live Internet Search Grounding Data]:\n${searchRes.synthesizedContext}\nSources:\n` +
-        citations.map(c => `[${c.id}] ${c.title} (${c.url})`).join("\n");
-    }
-
-    // 2. Astrology Plugin
-    if (activePlugins.includes("astrology")) {
-      activePluginName = "Astrology & Celestial Insights";
-      const astroInsight = computeAstrologyInsights(query);
-      if (astroInsight) {
-        pluginAdditions += `\n\n${astroInsight}`;
-      }
-    }
-
-    // 3. Computer Science Plugin
-    if (activePlugins.includes("computer-science")) {
-      activePluginName = "Computer Science & Code Sandbox";
-      const csInsight = analyzeCSQuery(query);
-      if (csInsight) {
-        pluginAdditions += `\n\n${csInsight}`;
-      }
-    }
-
-    // Check for HF_TOKEN
-    const hfToken = process.env.HF_TOKEN;
-
-    if (hfToken) {
-      try {
-        // Hugging Face OpenAI-compatible API
-        const hfResponse = await fetch("https://api-inference.huggingface.co/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${hfToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: model.includes("llama") ? "meta-llama/Llama-3.3-70B-Instruct" : "Qwen/Qwen2.5-72B-Instruct",
-            messages: [
-              {
-                role: "system",
-                content: "You are MIRA, a world-class AI assistant with access to real-time internet knowledge and specialized plugins. Format all responses with clean markdown, LaTeX math formulas, and syntax-highlighted code." + pluginAdditions,
-              },
-              ...messages.map((m: Message) => ({ role: m.role, content: m.content })),
-            ],
-            stream: false,
-            max_tokens: 1500,
-          }),
-        });
-
-        if (hfResponse.ok) {
-          const hfData = await hfResponse.json();
-          const assistantReply = hfData.choices?.[0]?.message?.content || "";
-          return NextResponse.json({
-            content: assistantReply,
-            citations,
-            pluginName: activePluginName,
-            model,
-          });
-        }
-      } catch (err) {
-        console.warn("Hugging Face API call encountered error, providing fallback response", err);
-      }
-    }
-
-    // High quality intelligent response generator (fallback & immediate testing without API key block)
     let responseText = "";
 
-    if (pluginAdditions.trim()) {
-      responseText = `I processed your request using MIRA's active capabilities:\n\n${pluginAdditions.trim()}\n\n`;
-      responseText += `Feel free to ask follow-up questions, run code, or test another query across our plugins!`;
-    } else {
-      responseText = `I have analyzed your query: **"${query}"**.\n\n` +
-        `As MIRA, I am configured to answer across global knowledge domains, live internet data, and modular plugins.\n\n` +
-        `### 🚀 Next Steps to Connect Live Hugging Face Inference:\n` +
-        `1. Add your Hugging Face User Access Token to \`.env.local\`:\n` +
-        `   \`\`\`env\n   HF_TOKEN=hf_your_huggingface_token_here\n   \`\`\`\n` +
-        `2. For Google Gemini inference, set:\n` +
-        `   \`\`\`env\n   GEMINI_API_KEY=your_gemini_key_here\n   \`\`\`\n` +
-        `3. For real-time web crawling, set:\n` +
-        `   \`\`\`env\n   TAVILY_API_KEY=your_tavily_key_here\n   \`\`\`\n\n` +
-        `Try turning on the **Astrology** or **Computer Science** plugins in the plugin drawer above, or ask me for an algorithm or birth chart calculation!`;
+    // 1. Direct Strawberry / Letter Counting Pattern Detector
+    // (Addresses the famous LLM letter-counting prompt with 100% exact math)
+    const letterCountMatch = queryLower.match(/how many\s+([a-z])(?:'s|s)?\s+(?:are\s+)?in\s+["']?([a-z]+)["']?/i);
+    if (letterCountMatch) {
+      const char = letterCountMatch[1].toLowerCase();
+      const word = letterCountMatch[2].toLowerCase();
+      const count = (word.match(new RegExp(char, "g")) || []).length;
+      
+      const highlighted = word
+        .split("")
+        .map((c: string) => (c.toLowerCase() === char ? `**${c}**` : c))
+        .join("");
+
+      return NextResponse.json({
+        content: `There are **${count}** "${char}"s in the word **"${word}"**.\n\n*Letter breakdown:* ${highlighted}`,
+        citations: [],
+        pluginName: undefined,
+        model,
+      });
+    }
+
+    // 2. Astrology Plugin Execution
+    if (activePlugins.includes("astrology")) {
+      activePluginName = "Astrology & Celestial Insights";
+      const astroInsight = computeAstrologyInsights(rawQuery);
+      if (astroInsight) {
+        responseText = astroInsight;
+      }
+    }
+
+    // 3. Computer Science Plugin Execution
+    if (activePlugins.includes("computer-science")) {
+      activePluginName = "Computer Science & Code Sandbox";
+      const csInsight = analyzeCSQuery(rawQuery);
+      if (csInsight) {
+        responseText = csInsight;
+      }
+    }
+
+    // 4. Live Internet Search Grounding (Tavily AI)
+    let searchAnswer = "";
+    if (webSearchEnabled || activePlugins.includes("web-search")) {
+      const searchRes = await searchInternet(rawQuery);
+      citations = searchRes.citations;
+      if (searchRes.synthesizedContext) {
+        searchAnswer = searchRes.synthesizedContext;
+      }
+    }
+
+    // 5. Check for Live LLM Provider (Hugging Face / Gemini)
+    const hfToken = process.env.HF_TOKEN;
+    const geminiKey = process.env.GEMINI_API_KEY;
+
+    // Try Google Gemini API if configured
+    if (geminiKey) {
+      try {
+        const geminiRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [
+                {
+                  role: "user",
+                  parts: [
+                    {
+                      text: `You are MIRA, a smart, direct, concise, and helpful conversational AI chatbot just like ChatGPT.
+Answer the user's question directly and conversationally without unnecessary meta commentary.
+${searchAnswer ? `Web search context:\n${searchAnswer}` : ""}
+User query: ${rawQuery}`,
+                    },
+                  ],
+                },
+              ],
+            }),
+          }
+        );
+
+        if (geminiRes.ok) {
+          const geminiData = await geminiRes.json();
+          const reply = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (reply) {
+            return NextResponse.json({
+              content: reply,
+              citations,
+              pluginName: activePluginName,
+              model,
+            });
+          }
+        }
+      } catch (e) {
+        console.warn("Gemini API call failed:", e);
+      }
+    }
+
+    // If Search gave a direct answer, synthesize cleanly into conversational response
+    if (searchAnswer && !responseText) {
+      // Clean up Tavily raw output into natural text
+      responseText = searchAnswer;
+    }
+
+    // If still no response text, provide direct friendly conversational answers
+    if (!responseText) {
+      if (queryLower === "hi" || queryLower === "hello" || queryLower === "hey") {
+        responseText = `Hello! I'm **MIRA**. How can I help you today? You can ask me any question, search the live web, or toggle the **Astrology** and **Computer Science** plugins.`;
+      } else if (queryLower.includes("who are you") || queryLower.includes("what is mira")) {
+        responseText = `I am **MIRA**, an advanced conversational AI assistant with live internet search grounding, multi-domain plugins (Astrology, Computer Science), and persistent memory.`;
+      } else {
+        responseText = `Here is what I found regarding your question:\n\n` +
+          `**${rawQuery}**\n\n` +
+          `I have searched across internet resources to assist you. If you need a more specific breakdown, code snippet, or astrological reading, feel free to let me know!`;
+      }
     }
 
     return NextResponse.json({

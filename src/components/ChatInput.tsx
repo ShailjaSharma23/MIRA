@@ -79,7 +79,7 @@ export function ChatInput({
           onKeyDown={handleKeyDown}
           placeholder="Ask MIRA anything across the internet, code, or astrology..."
           rows={1}
-          className="w-full bg-transparent text-white placeholder-gray-400 text-sm focus:outline-none resize-none max-h-48 px-2 py-1 scrollbar-thin"
+          className="w-full bg-transparent text-white placeholder-gray-400 text-[15px] focus:outline-none resize-none max-h-48 px-2 py-1 scrollbar-thin"
         />
 
         <div className="flex items-center justify-between mt-2 pt-2 border-t border-[#2D2F31]/60 px-1">
