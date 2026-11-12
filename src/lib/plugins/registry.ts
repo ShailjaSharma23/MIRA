@@ -7,7 +7,7 @@ export const DEFAULT_PLUGINS: PluginMeta[] = [
     description: "Connects MIRA to the live internet to retrieve up-to-the-minute data, news, prices, and facts with clickable citations.",
     icon: "Globe",
     category: "Research",
-    enabled: true,
+    enabled: false,
     systemPrompt: `You are equipped with the Live Web Search & Grounding tool. When the user asks about real-time, recent events, market prices, or current internet knowledge, reference the latest retrieved web facts and supply structured markdown citations.`,
     samplePrompts: [
       "What are the latest AI breakthroughs this week?",

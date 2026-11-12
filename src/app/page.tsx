@@ -19,7 +19,7 @@ export default function Home() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [selectedModel, setSelectedModel] = useState<AIModel>(AVAILABLE_MODELS[0]);
   const [plugins, setPlugins] = useState<PluginMeta[]>(DEFAULT_PLUGINS);
-  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [isPluginModalOpen, setIsPluginModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);

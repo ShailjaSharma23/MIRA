@@ -125,27 +125,24 @@ export function MessageItem({ message }: MessageItemProps) {
             )}
           </div>
 
-          {/* Citations Footer */}
+          {/* Citations Footer (Only shown when live web search was actively used) */}
           {!isUser && message.citations && message.citations.length > 0 && (
-            <div className="mt-2 pt-2 border-t border-[#2D2F31] flex flex-col gap-1.5">
-              <div className="text-[11px] font-semibold text-gray-400 flex items-center gap-1">
+            <div className="mt-3 pt-2.5 border-t border-[#2D2F31]/60 flex flex-col gap-2">
+              <div className="text-xs text-gray-400 flex items-center gap-1.5 font-medium">
                 <Globe className="w-3.5 h-3.5 text-blue-400" />
-                <span>Web Grounding Sources & Citations</span>
+                <span>Web Sources</span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+              <div className="flex flex-wrap gap-2">
                 {message.citations.map((cite) => (
                   <a
                     key={cite.id}
                     href={cite.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="p-2 rounded-lg bg-[#252628] hover:bg-[#2F3033] border border-[#3C4043] flex flex-col justify-between transition group"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#252628] hover:bg-[#2F3033] border border-[#3C4043] text-xs text-blue-300 hover:text-blue-200 transition"
                   >
-                    <div className="flex items-center justify-between text-[11px] font-medium text-blue-300 group-hover:text-blue-200">
-                      <span className="truncate flex-1">[{cite.id}] {cite.sourceName || "Source"}</span>
-                      <ExternalLink className="w-3 h-3 shrink-0 opacity-60 group-hover:opacity-100" />
-                    </div>
-                    <div className="text-[10px] text-gray-400 line-clamp-1 mt-1">{cite.title}</div>
+                    <span className="truncate max-w-[180px]">{cite.sourceName || cite.title}</span>
+                    <ExternalLink className="w-3 h-3 shrink-0 opacity-70" />
                   </a>
                 ))}
               </div>
