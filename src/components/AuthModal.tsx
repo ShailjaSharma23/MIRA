@@ -1,45 +1,58 @@
 "use client";
 
 import React, { useState } from "react";
-import { X, LogIn, LogOut, ShieldCheck, Key, Check } from "lucide-react";
+import { X, LogOut, ShieldCheck, Check, AlertCircle } from "lucide-react";
 import { UserProfile } from "@/types";
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  user: UserProfile;
-  onLogin: (profile: Partial<UserProfile>) => void;
+  user: UserProfile | null;
   onLogout: () => void;
 }
 
-export function AuthModal({ isOpen, onClose, user, onLogin, onLogout }: AuthModalProps) {
-  const [customName, setCustomName] = useState("");
-  const [customEmail, setCustomEmail] = useState("");
+export function AuthModal({ isOpen, onClose, user, onLogout }: AuthModalProps) {
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleSimulatedGoogleLogin = () => {
-    onLogin({
-      name: customName || "Shailja Sharma",
-      email: customEmail || "shailjasharma2307@gmail.com",
-      avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=" + (customName || "Shailja"),
-      isLoggedIn: true,
-    });
-    onClose();
+  const handleRealGoogleLogin = () => {
+    setLoading(true);
+    setErrorMsg(null);
+    // Redirect to legitimate Google OAuth 2.0 flow
+    window.location.href = "/api/auth/google";
+  };
+
+  const handleLogout = async () => {
+    setLoading(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      onLogout();
+      onClose();
+    } catch (e) {
+      console.error("Logout failed:", e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
       <div className="w-full max-w-md bg-[#1E1F20] border border-[#3C4043] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
         {/* Header */}
         <div className="px-5 py-4 border-b border-[#2D2F31] flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center">
               <ShieldCheck className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-semibold text-white">Google Authentication</h2>
-              <p className="text-xs text-gray-400">Manage account session and chat history sync</p>
+              <h2 className="text-base font-semibold text-white">
+                {user ? "Google Account" : "Sign in to MIRA"}
+              </h2>
+              <p className="text-xs text-gray-400">
+                {user ? "Your chats are synced to MongoDB" : "Sign in to save your chat history permanently"}
+              </p>
             </div>
           </div>
           <button
@@ -52,12 +65,19 @@ export function AuthModal({ isOpen, onClose, user, onLogin, onLogout }: AuthModa
 
         {/* Content */}
         <div className="p-6 space-y-5">
-          {user.isLoggedIn ? (
+          {errorMsg && (
+            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-300 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {user && user.isLoggedIn ? (
             <div className="flex flex-col items-center text-center space-y-3">
               <img
-                src={user.avatar}
+                src={user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user.name)}`}
                 alt={user.name}
-                className="w-16 h-16 rounded-full border-2 border-purple-500 shadow-lg"
+                className="w-16 h-16 rounded-full border-2 border-purple-500 shadow-lg object-cover"
               />
               <div>
                 <h3 className="text-base font-semibold text-white">{user.name}</h3>
@@ -70,27 +90,26 @@ export function AuthModal({ isOpen, onClose, user, onLogin, onLogout }: AuthModa
 
               <div className="w-full pt-4">
                 <button
-                  onClick={() => {
-                    onLogout();
-                    onClose();
-                  }}
-                  className="w-full py-2.5 px-4 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 text-xs font-semibold flex items-center justify-center gap-2 transition"
+                  onClick={handleLogout}
+                  disabled={loading}
+                  className="w-full py-2.5 px-4 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 text-xs font-semibold flex items-center justify-center gap-2 transition disabled:opacity-50"
                 >
                   <LogOut className="w-4 h-4" />
-                  <span>Sign Out</span>
+                  <span>{loading ? "Signing out..." : "Sign Out"}</span>
                 </button>
               </div>
             </div>
           ) : (
             <div className="space-y-4">
-              <p className="text-xs text-gray-300 leading-relaxed">
-                Signing in with Google links your chat threads, active plugin configurations, and conversation memories across sessions.
+              <p className="text-sm text-gray-300 leading-relaxed">
+                Without logging in, your chats are <strong>temporary</strong>. Sign in with Google to save your conversations to MongoDB and access them across all your devices.
               </p>
 
-              {/* Google Sign In Button */}
+              {/* Real Google Sign In Button */}
               <button
-                onClick={handleSimulatedGoogleLogin}
-                className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl bg-white hover:bg-gray-100 text-gray-900 text-xs font-semibold shadow-md transition"
+                onClick={handleRealGoogleLogin}
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl bg-white hover:bg-gray-100 text-gray-900 text-sm font-semibold shadow-md transition disabled:opacity-50 cursor-pointer"
               >
                 {/* Google "G" SVG */}
                 <svg className="w-4 h-4" viewBox="0 0 24 24">
@@ -111,18 +130,17 @@ export function AuthModal({ isOpen, onClose, user, onLogin, onLogout }: AuthModa
                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                   />
                 </svg>
-                <span>Continue with Google</span>
+                <span>{loading ? "Redirecting to Google..." : "Sign in with Google"}</span>
               </button>
 
-              <div className="pt-2 border-t border-[#2D2F31]">
-                <div className="text-[11px] font-mono text-gray-400 flex items-center gap-1.5 mb-1.5">
-                  <Key className="w-3.5 h-3.5 text-purple-400" />
-                  <span>Google Cloud OAuth Setup:</span>
-                </div>
-                <div className="p-2.5 rounded-lg bg-[#18191A] text-[10px] text-gray-400 font-mono space-y-1">
-                  <div>AUTH_GOOGLE_ID=your_client_id.apps.googleusercontent.com</div>
-                  <div>AUTH_GOOGLE_SECRET=your_client_secret</div>
-                  <div>NEXTAUTH_URL=http://localhost:3000</div>
+              <div className="pt-2 border-t border-[#2D2F31]/80">
+                <div className="p-2.5 rounded-lg bg-[#18191A] text-[11px] text-gray-400 font-mono space-y-1">
+                  <div className="text-gray-300 font-sans font-medium">Authentication Requirements:</div>
+                  <div>• AUTH_GOOGLE_ID</div>
+                  <div>• AUTH_GOOGLE_SECRET</div>
+                  <div className="text-[10px] text-gray-500 font-sans mt-1">
+                    Redirect URI: /api/auth/callback/google
+                  </div>
                 </div>
               </div>
             </div>

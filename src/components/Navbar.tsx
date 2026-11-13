@@ -14,7 +14,7 @@ interface NavbarProps {
   onOpenPluginModal: () => void;
   webSearchEnabled: boolean;
   onToggleWebSearch: () => void;
-  user: UserProfile;
+  user: UserProfile | null;
   onOpenAuth: () => void;
 }
 
@@ -122,17 +122,21 @@ export function Navbar({
         {/* User Profile / Auth */}
         <button
           onClick={onOpenAuth}
-          className="flex items-center gap-2 pl-2 pr-2.5 py-1 rounded-full bg-[#28292A] hover:bg-[#323335] text-xs font-medium border border-[#3C4043] transition"
+          className="flex items-center gap-2 pl-2 pr-2.5 py-1 rounded-full bg-[#28292A] hover:bg-[#323335] text-xs font-medium border border-[#3C4043] transition cursor-pointer"
         >
-          {user.isLoggedIn ? (
+          {user && user.isLoggedIn ? (
             <>
-              <img src={user.avatar} alt={user.name} className="w-5 h-5 rounded-full" />
+              <img
+                src={user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user.name)}`}
+                alt={user.name}
+                className="w-5 h-5 rounded-full object-cover"
+              />
               <span className="text-white hidden md:inline truncate max-w-[100px]">{user.name.split(" ")[0]}</span>
             </>
           ) : (
             <>
               <LogIn className="w-3.5 h-3.5 text-blue-400" />
-              <span className="text-blue-400">Login</span>
+              <span className="text-blue-400">Sign in</span>
             </>
           )}
         </button>

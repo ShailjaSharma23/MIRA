@@ -1,14 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Conversation } from "@/models/Conversation";
+import { verifySessionToken } from "@/lib/auth-session";
+
+function getAuthenticatedUserId(req: NextRequest): string | null {
+  const sessionCookie = req.cookies.get("mira_session")?.value;
+  if (!sessionCookie) return null;
+  const session = verifySessionToken(sessionCookie);
+  return session ? session.userId : null;
+}
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const userId = searchParams.get("userId");
+    const queryUserId = searchParams.get("userId");
+    const sessionUserId = getAuthenticatedUserId(req);
+
+    const userId = queryUserId || sessionUserId;
 
     if (!userId) {
-      return NextResponse.json({ error: "userId is required" }, { status: 400 });
+      return NextResponse.json({ error: "Authentication or userId required" }, { status: 401 });
     }
 
     const conn = await connectToDatabase();
@@ -30,7 +41,9 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { id, userId, title, messages, activePlugins = [], pinned = false } = body;
+    const { id, title, messages, activePlugins = [], pinned = false } = body;
+    const sessionUserId = getAuthenticatedUserId(req);
+    const userId = body.userId || sessionUserId;
 
     if (!id || !userId) {
       return NextResponse.json({ error: "id and userId are required" }, { status: 400 });
@@ -41,12 +54,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, offline: true });
     }
 
+    // Auto-generate title from first user message if title is default
+    let chatTitle = title;
+    if ((!chatTitle || chatTitle === "New Conversation") && Array.isArray(messages) && messages.length > 0) {
+      const firstUserMsg = messages.find((m: { role: string; content: string }) => m.role === "user");
+      if (firstUserMsg && firstUserMsg.content) {
+        chatTitle = firstUserMsg.content.slice(0, 32);
+      }
+    }
+
     const updated = await Conversation.findOneAndUpdate(
       { id, userId },
       {
         id,
         userId,
-        title: title || "New Conversation",
+        title: chatTitle || "New Conversation",
         messages: messages || [],
         activePlugins,
         pinned,
@@ -66,7 +88,8 @@ export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
-    const userId = searchParams.get("userId");
+    const sessionUserId = getAuthenticatedUserId(req);
+    const userId = searchParams.get("userId") || sessionUserId;
 
     if (!id || !userId) {
       return NextResponse.json({ error: "id and userId are required" }, { status: 400 });

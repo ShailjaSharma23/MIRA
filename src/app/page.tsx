@@ -11,7 +11,7 @@ import { Conversation, Message, PluginMeta, AIModel, UserProfile } from "@/types
 import { AVAILABLE_MODELS } from "@/lib/models/registry";
 import { DEFAULT_PLUGINS } from "@/lib/plugins/registry";
 import { generateId } from "@/lib/utils";
-import { Sparkles, Globe, Terminal, Compass, ArrowRight } from "lucide-react";
+import { Sparkles, Globe, Terminal, Compass, ArrowRight, Lock } from "lucide-react";
 
 export default function Home() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -23,41 +23,42 @@ export default function Home() {
   const [isPluginModalOpen, setIsPluginModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const [user, setUser] = useState<UserProfile>({
-    id: "user-1",
-    name: "Shailja Sharma",
-    email: "shailjasharma2307@gmail.com",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Shailja",
-    isLoggedIn: true,
-  });
+  // User starts as null (Logged out / Guest by default!)
+  const [user, setUser] = useState<UserProfile | null>(null);
 
-  const syncConversationToDb = async (conv: Conversation) => {
-    if (!user.isLoggedIn || !user.id) return;
-    try {
-      await fetch("/api/history", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: conv.id,
-          userId: user.id,
-          title: conv.title,
-          messages: conv.messages,
-          activePlugins: conv.activePlugins || [],
-          pinned: conv.pinned || false,
-        }),
-      });
-    } catch (e) {
-      console.warn("Background cloud sync skipped:", e);
-    }
-  };
-
-  // Load conversations from cloud / localStorage
+  // 1. Check real Google Auth session on initial mount
   useEffect(() => {
-    async function loadData() {
-      if (user.isLoggedIn && user.id) {
+    async function checkAuthSession() {
+      try {
+        const res = await fetch("/api/auth/me");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.user) {
+            setUser(data.user);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn("Auth check failed:", e);
+      } finally {
+        setAuthLoading(false);
+      }
+      setUser(null);
+    }
+
+    checkAuthSession();
+  }, []);
+
+  // 2. Load conversations: from MongoDB if logged in, otherwise from temporary guest session
+  useEffect(() => {
+    if (authLoading) return;
+
+    async function loadConversations() {
+      if (user && user.isLoggedIn) {
         try {
           const res = await fetch(`/api/history?userId=${user.id}`);
           if (res.ok) {
@@ -69,35 +70,59 @@ export default function Home() {
             }
           }
         } catch (e) {
-          console.warn("Failed to fetch cloud history, falling back to local storage:", e);
+          console.warn("Failed to load cloud conversations from MongoDB:", e);
         }
-      }
-
-      try {
-        const saved = localStorage.getItem("mira_conversations");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          setConversations(parsed);
-          if (parsed.length > 0) {
-            setActiveId(parsed[0].id);
+        // No conversations yet for this user in MongoDB
+        createNewChat();
+      } else {
+        // Guest mode: load temporary chats from sessionStorage or create a clean one
+        try {
+          const temp = sessionStorage.getItem("mira_guest_conversations");
+          if (temp) {
+            const parsed = JSON.parse(temp);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setConversations(parsed);
+              setActiveId(parsed[0].id);
+              return;
+            }
           }
-        } else {
-          createNewChat();
-        }
-      } catch {
+        } catch {}
         createNewChat();
       }
     }
 
-    loadData();
-  }, [user.id]);
+    loadConversations();
+  }, [user, authLoading]);
 
-  // Save conversations to localStorage
-  useEffect(() => {
-    if (conversations.length > 0) {
-      localStorage.setItem("mira_conversations", JSON.stringify(conversations));
+  // Sync conversation changes to MongoDB (if logged in) or sessionStorage (if guest)
+  const syncConversation = async (conv: Conversation) => {
+    if (user && user.isLoggedIn && user.id) {
+      try {
+        await fetch("/api/history", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: conv.id,
+            userId: user.id,
+            title: conv.title,
+            messages: conv.messages,
+            activePlugins: conv.activePlugins || [],
+            pinned: conv.pinned || false,
+          }),
+        });
+      } catch (e) {
+        console.warn("Background MongoDB sync error:", e);
+      }
+    } else {
+      // Temporary guest storage in sessionStorage
+      try {
+        setConversations((current) => {
+          sessionStorage.setItem("mira_guest_conversations", JSON.stringify(current));
+          return current;
+        });
+      } catch {}
     }
-  }, [conversations]);
+  };
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -128,9 +153,16 @@ export default function Home() {
       return filtered;
     });
 
-    if (user.isLoggedIn && user.id) {
+    if (user && user.isLoggedIn && user.id) {
       fetch(`/api/history?id=${id}&userId=${user.id}`, { method: "DELETE" }).catch(() => {});
     }
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    setConversations([]);
+    sessionStorage.removeItem("mira_guest_conversations");
+    createNewChat();
   };
 
   const handleSendMessage = async (content: string) => {
@@ -167,12 +199,14 @@ export default function Home() {
       prev.map((conv) => {
         if (conv.id === currentChatId) {
           const isFirstMessage = conv.messages.length === 0;
-          return {
+          const updatedConv = {
             ...conv,
             title: isFirstMessage ? content.slice(0, 32) : conv.title,
             messages: fullConversation,
             updatedAt: Date.now(),
           };
+          syncConversation(updatedConv);
+          return updatedConv;
         }
         return conv;
       })
@@ -221,7 +255,7 @@ export default function Home() {
               messages: [...conv.messages, assistantMessage],
               updatedAt: Date.now(),
             };
-            syncConversationToDb(updated);
+            syncConversation(updated);
             return updated;
           }
           return conv;
@@ -232,7 +266,7 @@ export default function Home() {
         const errorMessage: Message = {
           id: generateId(),
           role: "assistant",
-          content: "Sorry, I encountered an issue processing your request. Please check your network or try again.",
+          content: "Sorry, I ran into an issue connecting. Please try asking again in a moment!",
           createdAt: Date.now(),
         };
 
@@ -275,7 +309,7 @@ export default function Home() {
     {
       title: "Live Internet Research",
       desc: "Latest AI breakthroughs & real-time news",
-      prompt: "What are the latest AI and tech breakthroughs reported this week? Search the web and provide sources.",
+      prompt: "What are the latest AI and tech breakthroughs reported this week?",
       icon: Globe,
     },
     {
@@ -294,11 +328,13 @@ export default function Home() {
     },
     {
       title: "Full-Stack Architecture",
-      desc: "Next.js 16, Google OAuth, and Postgres DB",
-      prompt: "Explain how PostgreSQL MVCC works internally and how to design optimal database indexes for chat applications.",
+      desc: "Next.js 16, Google OAuth, and MongoDB",
+      prompt: "Explain how MongoDB Atlas handles database indexes and clustering for chat applications.",
       icon: Compass,
     },
   ];
+
+  const displayName = user && user.isLoggedIn ? user.name.split(" ")[0] : "there";
 
   return (
     <div className="flex h-screen w-full bg-[#131314] overflow-hidden text-gray-200">
@@ -330,6 +366,24 @@ export default function Home() {
           onOpenAuth={() => setIsAuthModalOpen(true)}
         />
 
+        {/* Guest Mode Top Notice Banner */}
+        {!authLoading && (!user || !user.isLoggedIn) && (
+          <div className="bg-[#1C1D1F] border-b border-[#2D2F31] px-4 py-2 flex items-center justify-between text-xs text-gray-300">
+            <div className="flex items-center gap-2">
+              <Lock className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+              <span>
+                You are currently in <strong>Temporary Guest Mode</strong>. Chats will not be saved permanently.
+              </span>
+            </div>
+            <button
+              onClick={() => setIsAuthModalOpen(true)}
+              className="text-purple-400 hover:text-purple-300 font-semibold underline underline-offset-2 shrink-0 cursor-pointer"
+            >
+              Sign in with Google
+            </button>
+          </div>
+        )}
+
         {/* Messages viewport */}
         <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-800">
           {messages.length === 0 ? (
@@ -337,11 +391,13 @@ export default function Home() {
               <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-blue-500 flex items-center justify-center text-white mb-4 shadow-xl shadow-purple-500/20">
                 <Sparkles className="w-7 h-7" />
               </div>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
-                Hello, {user.name.split(" ")[0]}
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
+                Hello, {displayName}
               </h1>
-              <p className="text-gray-400 text-sm mt-1 max-w-md">
-                What would you like to explore today? MIRA has access to live web knowledge, open-source Hugging Face models, and modular plugins.
+              <p className="text-gray-400 text-[15px] mt-2 max-w-md leading-relaxed">
+                {user && user.isLoggedIn
+                  ? "Your chats are saved to your MongoDB cloud account. What would you like to explore today?"
+                  : "Welcome to MIRA! Ask me anything, or sign in with Google to save your chats permanently."}
               </p>
 
               {/* Starter prompt cards */}
@@ -359,16 +415,16 @@ export default function Home() {
                         }
                         handleSendMessage(item.prompt);
                       }}
-                      className="p-3.5 rounded-xl bg-[#1E1F20] hover:bg-[#252628] border border-[#2D2F31] hover:border-purple-500/40 transition group flex flex-col justify-between"
+                      className="p-3.5 rounded-xl bg-[#1E1F20] hover:bg-[#252628] border border-[#2D2F31] hover:border-purple-500/40 transition group flex flex-col justify-between cursor-pointer"
                     >
                       <div className="flex items-center justify-between w-full mb-2">
                         <div className="flex items-center gap-2">
                           <Icon className="w-4 h-4 text-purple-400" />
-                          <span className="text-xs font-semibold text-white">{item.title}</span>
+                          <span className="text-sm font-semibold text-white">{item.title}</span>
                         </div>
                         <ArrowRight className="w-3.5 h-3.5 text-gray-500 group-hover:text-purple-400 group-hover:translate-x-0.5 transition" />
                       </div>
-                      <p className="text-[11px] text-gray-400 line-clamp-1">{item.desc}</p>
+                      <p className="text-xs text-gray-400 line-clamp-1">{item.desc}</p>
                     </button>
                   );
                 })}
@@ -391,7 +447,7 @@ export default function Home() {
                         <div className="w-2 h-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: "150ms" }} />
                         <div className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: "300ms" }} />
                       </div>
-                      <span className="text-[11px] font-mono text-purple-300">Searching global web knowledge & executing plugins...</span>
+                      <span className="text-[12px] font-mono text-purple-300">Thinking...</span>
                     </div>
                   </div>
                 </div>
@@ -428,16 +484,7 @@ export default function Home() {
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
         user={user}
-        onLogin={(profile) => setUser((prev) => ({ ...prev, ...profile, isLoggedIn: true }))}
-        onLogout={() =>
-          setUser({
-            id: "",
-            name: "Guest",
-            email: "",
-            avatar: "",
-            isLoggedIn: false,
-          })
-        }
+        onLogout={handleLogout}
       />
     </div>
   );
